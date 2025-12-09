@@ -1,11 +1,13 @@
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
+import { Toaster as Sonner } from "@/components/ui/sonner"; // Hapus impor Toaster Radix yang tidak digunakan
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
-import { BottomNav } from "@/components/couple/BottomNav";
+// Hapus impor BottomNav dari sini karena sudah dipindahkan ke MainLayout
+import MainLayout from "@/components/MainLayout"; // Import komponen layout baru
+
+// Import Halaman
 import Home from "./pages/Home";
 import Money from "./pages/Money";
 import Habits from "./pages/Habits";
@@ -26,73 +28,82 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <Toaster />
-      <Sonner />
+      {/* Hapus <Toaster /> (Radix/shadcn) karena Auth.tsx menggunakan Sonner */}
+      <Sonner /> {/* ✅ Toaster Sonner tetap di sini sebagai root portal */}
+      
       <BrowserRouter>
         <AuthProvider>
-          <div className="min-h-screen bg-background">
-            <Routes>
-              <Route path="/auth" element={<Auth />} />
-              <Route path="/couple-setup" element={
-                <ProtectedRoute>
-                  <CoupleSetup />
-                </ProtectedRoute>
-              } />
-              <Route path="/" element={
-                <ProtectedRoute>
+          {/* ✅ Hapus <div> wrapper di sini, karena sudah ada di MainLayout */}
+          <Routes>
+            {/* Rute tanpa Layout (Login, Setup, Install, 404) */}
+            <Route path="/auth" element={<Auth />} />
+            <Route path="/install" element={<Install />} />
+            <Route path="*" element={<NotFound />} /> 
+            
+            {/* Rute yang membutuhkan Otentikasi DAN BottomNav */}
+            <Route path="/couple-setup" element={
+              <ProtectedRoute>
+                <CoupleSetup /> {/* CoupleSetup biasanya tidak butuh BottomNav, tapi dimasukkan ke sini jika memang bagian dari app utama */}
+              </ProtectedRoute>
+            } />
+
+            {/* Rute Utama dengan Layout (termasuk BottomNav) */}
+            <Route path="/" element={
+              <ProtectedRoute>
+                <MainLayout>
                   <Home />
-                </ProtectedRoute>
-              } />
-              <Route path="/money" element={
-                <ProtectedRoute>
-                  <Money />
-                </ProtectedRoute>
-              } />
-              <Route path="/habits" element={
-                <ProtectedRoute>
-                  <Habits />
-                </ProtectedRoute>
-              } />
-              <Route path="/fitness" element={
-                <ProtectedRoute>
-                  <Fitness />
-                </ProtectedRoute>
-              } />
-              <Route path="/journal" element={
-                <ProtectedRoute>
-                  <Journal />
-                </ProtectedRoute>
-              } />
-              <Route path="/goals" element={
-                <ProtectedRoute>
-                  <Goals />
-                </ProtectedRoute>
-              } />
-              <Route path="/chat" element={
-                <ProtectedRoute>
-                  <Chat />
-                </ProtectedRoute>
-              } />
-              <Route path="/profile" element={
-                <ProtectedRoute>
-                  <Profile />
-                </ProtectedRoute>
-              } />
-              <Route path="/statistics" element={
-                <ProtectedRoute>
-                  <Statistics />
-                </ProtectedRoute>
-              } />
-              <Route path="/travel" element={
-                <ProtectedRoute>
-                  <TravelMilestones />
-                </ProtectedRoute>
-              } />
-              <Route path="/install" element={<Install />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-            <BottomNav />
-          </div>
+                </MainLayout>
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/money" element={
+              <ProtectedRoute>
+                <MainLayout><Money /></MainLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/habits" element={
+              <ProtectedRoute>
+                <MainLayout><Habits /></MainLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/fitness" element={
+              <ProtectedRoute>
+                <MainLayout><Fitness /></MainLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/journal" element={
+              <ProtectedRoute>
+                <MainLayout><Journal /></MainLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/goals" element={
+              <ProtectedRoute>
+                <MainLayout><Goals /></MainLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/chat" element={
+              <ProtectedRoute>
+                <MainLayout><Chat /></MainLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/profile" element={
+              <ProtectedRoute>
+                <MainLayout><Profile /></MainLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/statistics" element={
+              <ProtectedRoute>
+                <MainLayout><Statistics /></MainLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/travel" element={
+              <ProtectedRoute>
+                <MainLayout><TravelMilestones /></MainLayout>
+              </ProtectedRoute>
+            } />
+          </Routes>
+          
+          {/* ✅ Hapus <BottomNav /> dari sini */}
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
