@@ -2,13 +2,13 @@ import { useState, useEffect, createContext, useContext, ReactNode } from 'react
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
-// 🛠️ PERBAIKAN 1: Tambahkan properti 'email' ke interface Profile
+// --- Interface Data ---
+
 interface Profile {
   id: string;
   full_name: string | null;
   avatar_url: string | null;
-  // Ditambahkan: Properti email agar tidak error di Profile.tsx
-  email: string | null; 
+  email: string | null; // ✅ PERBAIKAN: Ditambahkan untuk Type Safety di komponen Profile
   created_at: string;
   updated_at: string;
 }
@@ -22,6 +22,8 @@ interface Couple {
   created_at: string;
   updated_at: string;
 }
+
+// --- Interface Context ---
 
 interface AuthContextType {
   user: User | null;
@@ -41,25 +43,27 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// --- Auth Provider ---
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [couple, setCouple] = useState<Couple | null>(null);
   const [partnerProfile, setPartnerProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(true); // ✅ Diperbaiki: Type assertion eksplisit
 
-  // 🛠️ PERBAIKAN 2: Gabungkan logika fetch ke dalam fungsi asinkron dan kembalikan promise
+  // --- Fetching Data Pasangan & Profil ---
   const fetchUserData = async (userId: string): Promise<void> => {
     try {
-      // Fetch profile (termasuk email jika ada di tabel 'profiles')
+      // Fetch profile
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('*') // Pastikan query ini mengambil kolom 'email'
+        .select('*')
         .eq('id', userId)
         .maybeSingle();
       
-      setProfile(profileData as Profile | null); // Tipe assertion untuk kecocokan Profile interface
+      setProfile(profileData as Profile | null); 
 
       // Fetch couple
       const { data: coupleData } = await supabase
@@ -86,49 +90,49 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           
           setPartnerProfile(partnerData as Profile | null);
         } else {
-            setPartnerProfile(null);
-        }
+            setPartnerProfile(null);
+        }
       } else {
-          setPartnerProfile(null);
-      }
+          setPartnerProfile(null);
+      }
     } catch (error) {
       console.error('Error fetching user data:', error);
-      throw error; // Propagate error for .finally()
+      throw error; 
     }
   };
 
+  // --- Effect untuk Session & Auth Listener ---
+
   useEffect(() => {
-    // 1. Dapatkan sesi pertama kali
-    const initialFetch = async () => {
-        const { data: { session } } = await supabase.auth.getSession();
-        setSession(session);
-        setUser(session?.user ?? null);
+    // 1. Dapatkan sesi pertama kali
+    const initialFetch = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        setSession(session);
+        setUser(session?.user ?? null);
 
-        if (session?.user) {
-            await fetchUserData(session.user.id);
-        }
-        
-        // Hanya set loading false setelah semua data terambil
-        setLoading(false);
-    };
+        if (session?.user) {
+            await fetchUserData(session.user.id);
+        }
+        
+        // Matikan loading setelah sesi awal dicek dan data profil ditarik
+        setLoading(false);
+    };
 
-    initialFetch();
+    initialFetch();
 
-    // 2. Set up auth state listener
+    // 2. Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
         
         if (session?.user) {
-          // Set loading true untuk event baru seperti sign in
-            setLoading(true); 
+            setLoading(true); 
           fetchUserData(session.user.id).finally(() => setLoading(false));
         } else {
           setProfile(null);
           setCouple(null);
           setPartnerProfile(null);
-            // Tidak perlu setLoading(false) di sini karena initialFetch sudah menanganinya
         }
       }
     );
@@ -137,21 +141,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
 
+  // --- Fungsi Auth & Couple ---
+
   const refreshCoupleData = async () => {
     if (user) {
-        setLoading(true);
+        setLoading(true);
       await fetchUserData(user.id).finally(() => setLoading(false));
     }
   };
 
-  // ... (Fungsi signUp, signIn, signOut, updateProfile, createCouple, joinCouple tetap sama)
-
-  // NOTE: Saya mengasumsikan kode fungsi auth lainnya sama persis
-  // Saya hanya akan menyertakan bagian yang diubah atau relevan dengan state
-
   const signUp = async (email: string, password: string, fullName: string) => {
     const redirectUrl = `${window.location.origin}/`;
-    
+        
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -180,7 +181,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setProfile(null);
     setCouple(null);
     setPartnerProfile(null);
-    // Tidak perlu setLoading(false) karena event listener akan menangani state kosong
   };
 
   const updateProfile = (data: Partial<Profile>) => {
@@ -267,6 +267,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     </AuthContext.Provider>
   );
 };
+
+// --- Custom Hook ---
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
