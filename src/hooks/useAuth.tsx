@@ -2,22 +2,22 @@ import { useState, useEffect, createContext, useContext, ReactNode, useCallback 
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client'; // Pastikan path ini benar
 import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react'; // Diperlukan untuk loading screen di Provider
+import { Loader2 } from 'lucide-react'; 
 
 // --- Definisi Tipe ---
 interface Profile { 
   id: string;
   full_name: string | null;
   avatar_url: string | null;
-  couple_id: string | null; // DITAMBAHKAN: Diperlukan untuk menautkan profil ke pasangan
+  couple_id: string | null; // Diperlukan untuk menautkan profil ke pasangan
   created_at: string;
   updated_at: string;
 }
 
 interface Couple {
   id: string;
-  partner_a_id: string; // Sudah sinkron dengan database Anda
-  partner_b_id: string | null; // Sudah sinkron dengan database Anda
+  partner_a_id: string; 
+  partner_b_id: string | null; 
   invite_code: string;
   status: string;
   created_at: string;
@@ -170,7 +170,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     try {
         // 1. Generate invite code & Buat couple
-        // Pastikan supabase.rpc('generate_invite_code') sudah didefinisikan di database
         const { data: inviteCode, error: codeError } = await supabase.rpc('generate_invite_code'); 
         
         if (codeError) throw new Error('Gagal menghasilkan kode undangan.');
@@ -225,7 +224,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             })
             .eq('invite_code', UPPERCASE_CODE) 
             .eq('status', 'pending')           
-            .is('partner_b_id', null)           // KUNCI PERBAIKAN: Memastikan hanya baris yang partner_b_id = NULL yang diupdate
+            .is('partner_b_id', null)           
             .select('id, partner_a_id')
             .maybeSingle(); 
 
@@ -328,14 +327,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       updateProfile
     }}>
       {loading ? (
-        // Loading Guard: Mencegah komponen anak me-render sebelum data auth dimuat
-        <div className="flex justify-center items-center min-h-screen">
-            <Loader2 className="h-8 w-8 animate-spin text-turquoise" />
-            <p className="ml-2 text-muted-foreground">Memuat sesi...</p>
-        </div>
-      ) : (
-        children
-      )}
+        // Loading Guard: Mencegah komponen anak me-render sebelum data auth dimuat
+        <div className="flex justify-center items-center min-h-screen">
+            <Loader2 className="h-8 w-8 animate-spin text-turquoise" />
+            <p className="ml-2 text-muted-foreground">Memuat sesi...</p>
+        </div>
+      ) : (
+        children
+      )}
     </AuthContext.Provider>
   );
 };

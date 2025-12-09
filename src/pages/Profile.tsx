@@ -51,36 +51,34 @@ const Profile = () => {
   const { user, profile, partnerProfile, couple, signOut, updateProfile } = useAuth();
   const navigate = useNavigate();
   const [loggingOut, setLoggingOut] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false); // State untuk Mode Gelap
+  const [isDarkMode, setIsDarkMode] = useState(false); 
 
   const userName = profile?.full_name || 'Pengguna';
   
-  // PERBAIKAN: Ambil email dari user?.email (objek autentikasi), bukan profile
+  // KUNCI PERBAIKAN: Menggunakan email dari objek user Supabase (bukan hardcode)
   const userEmail = user?.email || (profile?.full_name 
-    ? `${profile.full_name.toLowerCase().replace(/\s+/g, '.')}cloosed.i@gmail.com`
-    : 'lukmannrhkm80@gmail.com');
-  
+    ? `${profile.full_name.toLowerCase().replace(/\s+/g, '.')}@example.com`
+    : 'email@example.com'); // Fallback generik
+  
   const partnerName = partnerProfile?.full_name?.split(' ')[0] || null;
   const isConnected = couple?.status === 'active' && partnerProfile;
 
   const handleLogout = async () => {
     setLoggingOut(true);
-    // Hook useAuth sudah memiliki logic toast.info/success
     await signOut(); 
     navigate('/auth');
   };
 
   const handleToggleDarkMode = () => {
-    setIsDarkMode(prev => !prev);
-    // Implementasi logika tema global (misalnya, menambahkan kelas 'dark' ke body)
-    toast.info(`Mode Gelap ${isDarkMode ? 'Dinonaktifkan' : 'Diaktifkan'}`);
-  };
+    setIsDarkMode(prev => !prev);
+    toast.info(`Mode Gelap ${isDarkMode ? 'Dinonaktifkan' : 'Diaktifkan'}`);
+  };
 
   return (
     <div className="min-h-screen bg-background pb-24">
       <div className="max-w-lg mx-auto px-4 pt-6">
         
-        {/* Header */}
+        {/* Header */}
         <div className="flex items-center justify-between mb-6 opacity-0 animate-fade-in-up">
           <h1 className="text-2xl font-bold text-foreground">Profil</h1>
           <Button variant="ghost" size="icon" onClick={() => navigate('/settings-detail')}>
@@ -152,7 +150,6 @@ const Profile = () => {
         {/* Notification Settings */}
         <div className="mb-4 opacity-0 animate-fade-in-up" style={{ animationDelay: '250ms', animationFillMode: 'forwards' }}>
           <NotificationSettings />
-          {/* Catatan: Anda dapat menghapus style inline di sini jika Anda menggunakan utility class Tailwind untuk delay */}
         </div>
 
         {/* Settings */}
@@ -187,7 +184,6 @@ const Profile = () => {
             {MORE_OPTIONS_DATA.map((option) => (
               <button
                 key={option.label}
-                // Jika memiliki toggle (Mode Gelap), gunakan handleToggleDarkMode
                 onClick={option.toggle ? handleToggleDarkMode : option.onClick} 
                 className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-muted/50 transition-colors"
               >
@@ -201,8 +197,8 @@ const Profile = () => {
                   // UI Toggle dengan state isDarkMode
                   <div className={`w-10 h-6 rounded-full relative transition-all duration-300 ${isDarkMode ? 'bg-turquoise' : 'bg-muted-foreground/50'}`}>
                     <div 
-                        className={`absolute top-1 w-4 h-4 rounded-full bg-card shadow-sm transition-transform duration-300 ${isDarkMode ? 'translate-x-5' : 'translate-x-1'}`}
-                    />
+                        className={`absolute top-1 w-4 h-4 rounded-full bg-card shadow-sm transition-transform duration-300 ${isDarkMode ? 'translate-x-5' : 'translate-x-1'}`}
+                    />
                   </div>
                 ) : (
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
