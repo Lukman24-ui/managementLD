@@ -16,8 +16,8 @@ interface Profile {
 
 interface Couple {
   id: string;
-  partner_a_id: string; 
-  partner_b_id: string | null; 
+  partner_a_id: string; // Sudah sinkron dengan database Anda
+  partner_b_id: string | null; // Sudah sinkron dengan database Anda
   invite_code: string;
   status: string;
   created_at: string;
@@ -169,6 +169,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (!user) return { inviteCode: null, error: 'Pengguna tidak ditemukan' };
 
     try {
+        // --- SAFETY CHECK UNTUK KONFLIK 409 ---
+        // Mencegah pengguna yang sama membuat couple berkali-kali.
+        const { count, error: countError } = await supabase
+            .from('couples')
+            .select('id', { count: 'exact' })
+            .eq('partner_a_id', user.id); // Mencari apakah user.id sudah ada sebagai partner_a_id
+
+        if (countError) throw countError;
+
+        if (count && count > 0) {
+            return { inviteCode: null, error: 'Anda sudah menjadi pembuat couple yang aktif atau tertunda.' };
+        }
+        // --- AKHIR SAFETY CHECK ---
+
         // 1. Generate invite code & Buat couple
         const { data: inviteCode, error: codeError } = await supabase.rpc('generate_invite_code'); 
         
@@ -224,7 +238,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             })
             .eq('invite_code', UPPERCASE_CODE) 
             .eq('status', 'pending')           
-            .is('partner_b_id', null)           
+            .is('partner_b_id', null)           // KUNCI PERBAIKAN: Memastikan hanya baris yang partner_b_id = NULL yang diupdate
             .select('id, partner_a_id')
             .maybeSingle(); 
 
