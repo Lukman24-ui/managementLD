@@ -57,8 +57,8 @@ const Profile = () => {
   
   // PERBAIKAN: Ambil email dari user?.email (objek autentikasi), bukan profile
   const userEmail = user?.email || (profile?.full_name 
-    ? `${profile.full_name.toLowerCase().replace(/\s+/g, '.')}@example.com`
-    : 'email@example.com');
+    ? `${profile.full_name.toLowerCase().replace(/\s+/g, '.')}cloosed.i@gmail.com`
+    : 'lukmannrhkm80@gmail.com');
   
   const partnerName = partnerProfile?.full_name?.split(' ')[0] || null;
   const isConnected = couple?.status === 'active' && partnerProfile;

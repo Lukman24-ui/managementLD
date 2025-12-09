@@ -1,23 +1,23 @@
 import { useState, useEffect, createContext, useContext, ReactNode, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/client'; // Pastikan path ini benar
 import { toast } from 'sonner';
+import { Loader2 } from 'lucide-react'; // Diperlukan untuk loading screen di Provider
 
 // --- Definisi Tipe ---
-// Menambahkan couple_id di Profile untuk sinkronisasi state yang lebih baik
 interface Profile { 
   id: string;
   full_name: string | null;
   avatar_url: string | null;
-  couple_id: string | null; // <-- Ditambahkan
+  couple_id: string | null; // DITAMBAHKAN: Diperlukan untuk menautkan profil ke pasangan
   created_at: string;
   updated_at: string;
 }
 
 interface Couple {
   id: string;
-  partner_a_id: string;
-  partner_b_id: string | null;
+  partner_a_id: string; // Sudah sinkron dengan database Anda
+  partner_b_id: string | null; // Sudah sinkron dengan database Anda
   invite_code: string;
   status: string;
   created_at: string;
@@ -53,7 +53,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // --- 1. Fetch User Data (Profile, Couple, Partner) ---
   const fetchUserData = useCallback(async (userId: string) => {
     try {
-      // Menggunakan Promise.all untuk mengambil data secara paralel (efisien)
+      // Ambil data profil terlebih dahulu
       const [{ data: profileData, error: profileError }] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
       ]);
@@ -61,11 +61,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (profileError) throw profileError;
 
       setProfile(profileData as Profile || null);
-      setCouple(null); // Reset couple data
-      setPartnerProfile(null); // Reset partner data
+      setCouple(null); 
+      setPartnerProfile(null); 
 
+      // BARU: Ambil data couple menggunakan couple_id di profile
       if (profileData?.couple_id) {
-        // Jika user memiliki couple_id, ambil data couple dan partner
         const { data: coupleData, error: coupleError } = await supabase.from('couples')
           .select('*')
           .eq('id', profileData.couple_id)
@@ -75,6 +75,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         setCouple(coupleData as Couple || null);
 
+        // Ambil data pasangan jika couple aktif
         if (coupleData && coupleData.status === 'active') {
           const partnerId = (coupleData as Couple).partner_a_id === userId 
             ? (coupleData as Couple).partner_b_id 
@@ -95,7 +96,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     } catch (error: any) {
       console.error('Error fetching user data:', error);
-      toast.error(`Gagal memuat data: ${error.message}`);
+      toast.error(`Gagal memuat data: ${error.message}`);
     } finally {
         setLoading(false);
     }
@@ -112,7 +113,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
 
   const signUp = useCallback(async (email: string, password: string, fullName: string) => {
-    // ... (Logika signUp tidak diubah, sudah baik)
     const redirectUrl = `${window.location.origin}/`;
     
     const { error } = await supabase.auth.signUp({
@@ -136,7 +136,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
 
   const signIn = useCallback(async (email: string, password: string) => {
-    // ... (Logika signIn tidak diubah, sudah baik)
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -149,7 +148,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
 
   const signOut = useCallback(async () => {
-    // ... (Logika signOut tidak diubah, sudah baik)
     setLoading(true); 
     await supabase.auth.signOut();
     setUser(null);
@@ -163,7 +161,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
 
   const updateProfile = useCallback((data: Partial<Profile>) => {
-    // ... (Logika updateProfile tidak diubah, sudah baik)
     setProfile(prev => prev ? { ...prev, ...data } : null);
   }, []);
 
@@ -173,6 +170,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     try {
         // 1. Generate invite code & Buat couple
+        // Pastikan supabase.rpc('generate_invite_code') sudah didefinisikan di database
         const { data: inviteCode, error: codeError } = await supabase.rpc('generate_invite_code'); 
         
         if (codeError) throw new Error('Gagal menghasilkan kode undangan.');
@@ -189,18 +187,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         if (coupleError) throw coupleError;
 
-        // 2. Update profile pengguna (Partner A) dengan couple_id
-        const { error: profileError } = await supabase
-            .from('profiles')
-            .update({ couple_id: newCoupleData.id })
-            .eq('id', user.id);
+        // 2. Update profile pengguna (Partner A) dengan couple_id
+        const { error: profileError } = await supabase
+            .from('profiles')
+            .update({ couple_id: newCoupleData.id })
+            .eq('id', user.id);
 
-        if (profileError) throw profileError;
+        if (profileError) throw profileError;
         
         // 3. Update state di frontend
         setCouple(newCoupleData as Couple);
-        // Sinkronkan profile state dengan couple_id baru
-        setProfile(prev => prev ? { ...prev, couple_id: newCoupleData.id } : null); 
+        setProfile(prev => prev ? { ...prev, couple_id: newCoupleData.id } : null); 
 
         toast.success("Couple dibuat! Bagikan kode undangan.");
         return { inviteCode: newCoupleData.invite_code, error: null };
@@ -219,16 +216,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const UPPERCASE_CODE = inviteCode.toUpperCase().trim();
 
     try {
-        // 1. UPDATE Atomik: Cari dan perbarui baris yang cocok
+        // 1. UPDATE Atomik: Mencari baris yang valid (pending, belum ada partner B) dan memperbarui secara bersamaan
         const { data: coupleData, error: updateError } = await supabase
             .from('couples')
             .update({
                 partner_b_id: user.id, 
-                status: 'active'       
+                status: 'active'       
             })
             .eq('invite_code', UPPERCASE_CODE) 
-            .eq('status', 'pending')           
-            .is('partner_b_id', null)           
+            .eq('status', 'pending')           
+            .is('partner_b_id', null)           // KUNCI PERBAIKAN: Memastikan hanya baris yang partner_b_id = NULL yang diupdate
             .select('id, partner_a_id')
             .maybeSingle(); 
 
@@ -238,13 +235,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             throw new Error('Kode undangan tidak valid, sudah digunakan, atau tidak ditemukan.');
         }
 
-        // Safety check
-        if (coupleData.partner_a_id === user.id) {
-            throw new Error('Anda tidak bisa bergabung dengan couple yang Anda buat sendiri.');
-        }
+        // Safety check: Cegah bergabung dengan pasangan sendiri
+        if (coupleData.partner_a_id === user.id) {
+            throw new Error('Anda tidak bisa bergabung dengan couple yang Anda buat sendiri.');
+        }
 
-        // 2. Update profile pengguna (Pasangan B) dengan couple_id
-        const { error: profileUpdateError } = await supabase
+        // 2. Update profile pengguna (Pasangan B) dengan couple_id
+        const { error: profileUpdateError } = await supabase
             .from('profiles')
             .update({ couple_id: coupleData.id }) 
             .eq('id', user.id);
@@ -267,7 +264,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   // --- 3. Initial Auth Setup & Listener (useEffect) ---
   useEffect(() => {
-    let isMounted = true; // Flag untuk menghindari memory leak
+    let isMounted = true; 
 
     const loadInitialSession = async () => {
         const { data: { session: currentSession } } = await supabase.auth.getSession();
@@ -289,7 +286,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
         (event, session) => {
-            if (!isMounted) return;
+            if (!isMounted) return;
 
             const currentUser = session?.user ?? null;
             setSession(session);
@@ -298,7 +295,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             if (currentUser) {
                 fetchUserData(currentUser.id);
             } else if (event === 'SIGNED_OUT') {
-                // Reset semua state
                 setProfile(null);
                 setCouple(null);
                 setPartnerProfile(null);
@@ -308,9 +304,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     );
 
     return () => {
-        isMounted = false;
-        subscription.unsubscribe();
-    };
+        isMounted = false;
+        subscription.unsubscribe();
+    };
   }, [fetchUserData]);
 
 
@@ -331,7 +327,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       refreshCoupleData,
       updateProfile
     }}>
-      {children}
+      {loading ? (
+        // Loading Guard: Mencegah komponen anak me-render sebelum data auth dimuat
+        <div className="flex justify-center items-center min-h-screen">
+            <Loader2 className="h-8 w-8 animate-spin text-turquoise" />
+            <p className="ml-2 text-muted-foreground">Memuat sesi...</p>
+        </div>
+      ) : (
+        children
+      )}
     </AuthContext.Provider>
   );
 };
