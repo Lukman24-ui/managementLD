@@ -4,10 +4,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 // --- Definisi Tipe ---
-interface Profile {
+// Menambahkan couple_id di Profile untuk sinkronisasi state yang lebih baik
+interface Profile { 
   id: string;
   full_name: string | null;
   avatar_url: string | null;
+  couple_id: string | null; // <-- Ditambahkan
   created_at: string;
   updated_at: string;
 }
@@ -52,43 +54,51 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const fetchUserData = useCallback(async (userId: string) => {
     try {
       // Menggunakan Promise.all untuk mengambil data secara paralel (efisien)
-      const [
-        { data: profileData },
-        { data: coupleData }
-      ] = await Promise.all([
+      const [{ data: profileData, error: profileError }] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
-        supabase.from('couples')
-          .select('*')
-          .or(`partner_a_id.eq.${userId},partner_b_id.eq.${userId}`)
-          .eq('status', 'active')
-          .maybeSingle()
       ]);
-      
+
+      if (profileError) throw profileError;
+
       setProfile(profileData as Profile || null);
-      setCouple(coupleData as Couple || null);
+      setCouple(null); // Reset couple data
       setPartnerProfile(null); // Reset partner data
 
-      // Fetch partner profile jika couple ada
-      if (coupleData) {
-        const partnerId = (coupleData as Couple).partner_a_id === userId 
-          ? (coupleData as Couple).partner_b_id 
-          : (coupleData as Couple).partner_a_id;
+      if (profileData?.couple_id) {
+        // Jika user memiliki couple_id, ambil data couple dan partner
+        const { data: coupleData, error: coupleError } = await supabase.from('couples')
+          .select('*')
+          .eq('id', profileData.couple_id)
+          .maybeSingle();
+
+        if (coupleError) throw coupleError;
+
+        setCouple(coupleData as Couple || null);
+
+        if (coupleData && coupleData.status === 'active') {
+          const partnerId = (coupleData as Couple).partner_a_id === userId 
+            ? (coupleData as Couple).partner_b_id 
+            : (coupleData as Couple).partner_a_id;
         
-        if (partnerId) {
-          const { data: partnerData } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', partnerId)
-            .maybeSingle();
-          
-          setPartnerProfile(partnerData as Profile || null);
+          if (partnerId) {
+            const { data: partnerData, error: partnerError } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', partnerId)
+              .maybeSingle();
+            
+            if (partnerError) throw partnerError;
+            setPartnerProfile(partnerData as Profile || null);
+          }
         }
       }
-    } catch (error) {
+
+    } catch (error: any) {
       console.error('Error fetching user data:', error);
+      toast.error(`Gagal memuat data: ${error.message}`);
     } finally {
-        setLoading(false);
-    }
+        setLoading(false);
+    }
   }, []);
 
 
@@ -102,6 +112,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
 
   const signUp = useCallback(async (email: string, password: string, fullName: string) => {
+    // ... (Logika signUp tidak diubah, sudah baik)
     const redirectUrl = `${window.location.origin}/`;
     
     const { error } = await supabase.auth.signUp({
@@ -115,41 +126,44 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     });
 
-    if (error) {
-        toast.error(error.message);
-    } else {
-        toast.success("Cek email Anda untuk link verifikasi!");
-    }
+    if (error) {
+        toast.error(error.message);
+    } else {
+        toast.success("Cek email Anda untuk link verifikasi!");
+    }
     return { error };
   }, []);
 
 
   const signIn = useCallback(async (email: string, password: string) => {
+    // ... (Logika signIn tidak diubah, sudah baik)
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
-    if (error) {
-        toast.error(error.message);
-    }
+    if (error) {
+        toast.error(error.message);
+    }
     return { error };
   }, []);
 
 
   const signOut = useCallback(async () => {
-    setLoading(true); // Opsional: tampilkan loading saat signout
+    // ... (Logika signOut tidak diubah, sudah baik)
+    setLoading(true); 
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);
     setProfile(null);
     setCouple(null);
     setPartnerProfile(null);
-    setLoading(false);
-    toast.info("Anda telah keluar.");
+    setLoading(false);
+    toast.info("Anda telah keluar.");
   }, []);
 
 
   const updateProfile = useCallback((data: Partial<Profile>) => {
+    // ... (Logika updateProfile tidak diubah, sudah baik)
     setProfile(prev => prev ? { ...prev, ...data } : null);
   }, []);
 
@@ -158,116 +172,146 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (!user) return { inviteCode: null, error: 'Pengguna tidak ditemukan' };
 
     try {
-        // Generate invite code
-        const { data: inviteCode, error: codeError } = await supabase.rpc('generate_invite_code');
-        
-        if (codeError) throw new Error('Gagal menghasilkan kode undangan.');
+        // 1. Generate invite code & Buat couple
+        const { data: inviteCode, error: codeError } = await supabase.rpc('generate_invite_code'); 
+        
+        if (codeError) throw new Error('Gagal menghasilkan kode undangan.');
 
-        const { data, error } = await supabase
-            .from('couples')
-            .insert({
-                partner_a_id: user.id,
-                invite_code: inviteCode,
-                status: 'pending'
-            })
-            .select()
-            .single();
+        const { data: newCoupleData, error: coupleError } = await supabase
+            .from('couples')
+            .insert({
+                partner_a_id: user.id,
+                invite_code: inviteCode,
+                status: 'pending'
+            })
+            .select()
+            .single();
 
-        if (error) throw error;
-        
-        setCouple(data as Couple);
-        toast.success("Couple dibuat! Bagikan kode undangan.");
-        return { inviteCode: data.invite_code, error: null };
+        if (coupleError) throw coupleError;
 
-    } catch (e: any) {
-        console.error('Error creating couple:', e);
-        toast.error(e.message || 'Gagal membuat couple.');
-        return { inviteCode: null, error: e };
-    }
+        // 2. Update profile pengguna (Partner A) dengan couple_id
+        const { error: profileError } = await supabase
+            .from('profiles')
+            .update({ couple_id: newCoupleData.id })
+            .eq('id', user.id);
+
+        if (profileError) throw profileError;
+        
+        // 3. Update state di frontend
+        setCouple(newCoupleData as Couple);
+        // Sinkronkan profile state dengan couple_id baru
+        setProfile(prev => prev ? { ...prev, couple_id: newCoupleData.id } : null); 
+
+        toast.success("Couple dibuat! Bagikan kode undangan.");
+        return { inviteCode: newCoupleData.invite_code, error: null };
+
+    } catch (e: any) {
+        console.error('Error creating couple:', e);
+        toast.error(e.message || 'Gagal membuat couple.');
+        return { inviteCode: null, error: e };
+    }
   }, [user]);
 
 
   const joinCouple = useCallback(async (inviteCode: string) => {
     if (!user) return { error: 'Pengguna tidak ditemukan' };
 
-    try {
-        // 1. Cari couple dengan invite code
-        const { data: coupleData, error: findError } = await supabase
-            .from('couples')
-            .select('*')
-            .eq('invite_code', inviteCode.toUpperCase())
-            .eq('status', 'pending')
-            .maybeSingle();
+    const UPPERCASE_CODE = inviteCode.toUpperCase().trim();
 
-        if (findError) throw new Error('Error mencari couple.');
-        if (!coupleData) throw new Error('Kode undangan tidak valid atau sudah digunakan.');
+    try {
+        // 1. UPDATE Atomik: Cari dan perbarui baris yang cocok
+        const { data: coupleData, error: updateError } = await supabase
+            .from('couples')
+            .update({
+                partner_b_id: user.id, 
+                status: 'active'       
+            })
+            .eq('invite_code', UPPERCASE_CODE) 
+            .eq('status', 'pending')           
+            .is('partner_b_id', null)           
+            .select('id, partner_a_id')
+            .maybeSingle(); 
 
+        if (updateError) throw updateError;
+
+        if (!coupleData) {
+            throw new Error('Kode undangan tidak valid, sudah digunakan, atau tidak ditemukan.');
+        }
+
+        // Safety check
         if (coupleData.partner_a_id === user.id) {
-            throw new Error('Tidak bisa bergabung dengan couple Anda sendiri');
+            throw new Error('Anda tidak bisa bergabung dengan couple yang Anda buat sendiri.');
         }
 
-        // 2. Update couple dengan partner_b dan set status to active
-        const { error: updateError } = await supabase
-            .from('couples')
-            .update({
-                partner_b_id: user.id,
-                status: 'active'
-            })
-            .eq('id', coupleData.id);
+        // 2. Update profile pengguna (Pasangan B) dengan couple_id
+        const { error: profileUpdateError } = await supabase
+            .from('profiles')
+            .update({ couple_id: coupleData.id }) 
+            .eq('id', user.id);
 
-        if (updateError) throw updateError;
-        
-        // 3. Refresh data untuk memuat status couple baru dan profil pasangan
-        await fetchUserData(user.id);
-        
-        toast.success("Berhasil bergabung dengan couple!");
-        return { error: null };
+        if (profileUpdateError) throw profileUpdateError;
+        
+        // 3. Refresh data untuk memuat status couple baru dan profil pasangan
+        await fetchUserData(user.id);
+        
+        toast.success("Berhasil bergabung dengan couple!");
+        return { error: null };
 
-    } catch (e: any) {
-        console.error('Error joining couple:', e);
-        toast.error(e.message || 'Gagal bergabung dengan couple.');
-        return { error: e };
-    }
+    } catch (e: any) {
+        console.error('Error joining couple:', e);
+        toast.error(e.message || 'Gagal bergabung dengan couple.');
+        return { error: e };
+    }
   }, [user, fetchUserData]);
 
 
   // --- 3. Initial Auth Setup & Listener (useEffect) ---
-
   useEffect(() => {
-    // 1. Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-        (event, session) => {
-            setSession(session);
-            const currentUser = session?.user ?? null;
-            setUser(currentUser);
+    let isMounted = true; // Flag untuk menghindari memory leak
 
-            // Fetch data jika user baru masuk atau ada perubahan sesi
-            if (currentUser) {
-                fetchUserData(currentUser.id);
-            } else {
-                setProfile(null);
-                setCouple(null);
-                setPartnerProfile(null);
-                setLoading(false); // Pastikan loading berhenti saat signed_out
-            }
-        }
-    );
+    const loadInitialSession = async () => {
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        
+        if (!isMounted) return;
 
-    // 2. THEN check for existing session
-    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
-        setSession(currentSession);
-        const currentUser = currentSession?.user ?? null;
-        setUser(currentUser);
-        
-        if (currentUser) {
-            fetchUserData(currentUser.id);
-        } else {
-            setLoading(false); // Hanya set loading false di sini jika tidak ada user
-        }
-    });
+        const currentUser = currentSession?.user ?? null;
+        setSession(currentSession);
+        setUser(currentUser);
 
-    return () => subscription.unsubscribe();
-  }, [fetchUserData]); // Dependency fetchUserData ditambahkan
+        if (currentUser) {
+            await fetchUserData(currentUser.id);
+        } else {
+            setLoading(false); 
+        }
+    };
+
+    loadInitialSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        (event, session) => {
+            if (!isMounted) return;
+
+            const currentUser = session?.user ?? null;
+            setSession(session);
+            setUser(currentUser);
+
+            if (currentUser) {
+                fetchUserData(currentUser.id);
+            } else if (event === 'SIGNED_OUT') {
+                // Reset semua state
+                setProfile(null);
+                setCouple(null);
+                setPartnerProfile(null);
+                setLoading(false); 
+            }
+        }
+    );
+
+    return () => {
+        isMounted = false;
+        subscription.unsubscribe();
+    };
+  }, [fetchUserData]);
 
 
   // --- 4. Context Provider Return ---
