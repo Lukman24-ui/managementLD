@@ -61,25 +61,12 @@ export default defineConfig(({ mode }) => ({
     }),
   ].filter(Boolean), 
   build: {
-    // ✅ PERBAIKAN: Pindahkan chunkSizeWarningLimit ke level 'build'
-    chunkSizeWarningLimit: 1500, // Sekarang berada di lokasi yang benar
+    // ✅ PERBAIKAN: Jaga chunkSizeWarningLimit di sini
+    chunkSizeWarningLimit: 1500, 
     rollupOptions: {
         output: {
-            manualChunks(id) {
-                // Kelompokkan library besar yang sering digunakan
-                if (id.includes('node_modules')) {
-                    // Pisahkan vendor inti
-                    if (id.includes('react') || id.includes('zod')) {
-                        return 'vendor-core';
-                    }
-                    // Pisahkan Supabase dan date-fns ke chunk terpisah
-                    if (id.includes('@supabase') || id.includes('date-fns')) {
-                        return 'vendor-supabase-util';
-                    }
-                    // Sisanya masuk ke vendor
-                    return 'vendor';
-                }
-            },
+            // !!! MANUAL CHUNKS TELAH DIHAPUS !!!
+            // Ini akan memaksa semua vendor ke satu chunk untuk keamanan inisialisasi React.
         },
     },
   },
