@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
-    // Membersihkan penggunaan filter(Boolean)
+    // Membersihkan penggunaan filter(Boolean)
     mode === "development" ? componentTagger() : null, 
     VitePWA({
       registerType: "autoUpdate",
@@ -59,31 +59,30 @@ export default defineConfig(({ mode }) => ({
         ],
       },
     }),
-  ].filter(Boolean), // ✅ Perbaikan: Tetap gunakan filter(Boolean) untuk membersihkan null
+  ].filter(Boolean), 
   build: {
-    // ✅ PERBAIKAN: Konfigurasi Code Splitting untuk mengurangi ukuran chunk
-    rollupOptions: {
-        output: {
-            manualChunks(id) {
-                // Kelompokkan library besar yang sering digunakan
-                if (id.includes('node_modules')) {
-                    // Pisahkan vendor inti
-                    if (id.includes('react') || id.includes('zod')) {
-                        return 'vendor-core';
-                    }
-                    // Pisahkan Supabase dan date-fns ke chunk terpisah
-                    if (id.includes('@supabase') || id.includes('date-fns')) {
-                        return 'vendor-supabase-util';
-                    }
-                    // Sisanya masuk ke vendor
-                    return 'vendor';
-                }
-            },
-        },
-        // Opsional: Menaikkan batas peringatan ukuran chunk (Misalnya 1500kB)
-        chunkSizeWarningLimit: 1500,
-    }
-  },
+    // ✅ PERBAIKAN: Pindahkan chunkSizeWarningLimit ke level 'build'
+    chunkSizeWarningLimit: 1500, // Sekarang berada di lokasi yang benar
+    rollupOptions: {
+        output: {
+            manualChunks(id) {
+                // Kelompokkan library besar yang sering digunakan
+                if (id.includes('node_modules')) {
+                    // Pisahkan vendor inti
+                    if (id.includes('react') || id.includes('zod')) {
+                        return 'vendor-core';
+                    }
+                    // Pisahkan Supabase dan date-fns ke chunk terpisah
+                    if (id.includes('@supabase') || id.includes('date-fns')) {
+                        return 'vendor-supabase-util';
+                    }
+                    // Sisanya masuk ke vendor
+                    return 'vendor';
+                }
+            },
+        },
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
