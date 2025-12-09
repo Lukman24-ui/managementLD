@@ -6,103 +6,62 @@ import { VitePWA } from "vite-plugin-pwa";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
-  // base: mode === "production" ? "/namarepoanda/" : "/", // Opsional: Hapus jika tidak perlu sub-path
-  server: {
-    host: "::",
-    port: 8080,
-  },
-  plugins: [
-    react(),
-    mode === "development" && componentTagger(),
-    VitePWA({
-      registerType: "autoUpdate",
-      includeAssets: ["favicon.ico", "icons/*.png"],
-      manifest: {
-        name: "CoupleSync",
-        short_name: "CoupleSync",
-        description: "Track money, habits, fitness, mood, and relationship goals together",
-        theme_color: "#31C6D4",
-        background_color: "#0F1419",
-        display: "standalone",
-        orientation: "portrait",
-        scope: "/",
-        start_url: "/",
-        icons: [
-          {
-            src: "/icons/icon-192x192.png",
-            sizes: "192x192",
-            type: "image/png",
-            purpose: "maskable any",
-          },
-          {
-            src: "/icons/icon-512x512.png",
-            sizes: "512x512",
-            type: "image/png",
-            purpose: "maskable any",
-          },
-        ],
-      },
-      workbox: {
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
-        runtimeCaching: [
-          // Cache untuk aset gambar/statis lokal
-          {
-            urlPattern: /\.(?:png|jpg|jpeg|svg|gif|ico)$/i,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "images-cache",
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 7, // 7 days
-              },
-            },
-          },
-          // Cache untuk Google Fonts
-          {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "google-fonts-cache",
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365,
-              },
-            },
-          },
-        ],
-      },
-    }),
-  ].filter(Boolean),
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-      // TAMBAHAN KRITIS: Memaksa de-duplikasi React untuk mengatasi forwardRef error
-      'react': path.resolve('./node_modules/react'),
-      'react-dom': path.resolve('./node_modules/react-dom'),
-    },
-    extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json'], 
-  },
-  build: {
-    chunkSizeWarningLimit: 1000, 
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (id.includes('node_modules')) {
-            // PERBAIKAN: Hapus pemisahan React eksplisit agar tetap di vendor umum
-            // if (id.includes('/react') || id.includes('/react-dom')) { return 'vendor-react'; }
-            
-            // Memisahkan library besar tertentu
-            if (id.includes('@supabase')) {
-              return 'vendor-supabase';
-            }
-            if (id.includes('@tanstack')) {
-              return 'vendor-tanstack';
-            }
-            // Kembalikan sisa library node_modules (termasuk React) ke chunk vendor umum
-            return 'vendor'; 
-          }
-        },
-      },
-    },
-  },
+  server: {
+    host: "::",
+    port: 8080,
+  },
+  plugins: [
+    react(),
+    mode === "development" && componentTagger(),
+    VitePWA({
+      registerType: "autoUpdate",
+      includeAssets: ["favicon.ico", "icons/*.png"],
+      manifest: {
+        name: "CoupleSync",
+        short_name: "CoupleSync",
+        description: "Track money, habits, fitness, mood, and relationship goals together",
+        theme_color: "#31C6D4",
+        background_color: "#0F1419",
+        display: "standalone",
+        orientation: "portrait",
+        scope: "/",
+        start_url: "/",
+        icons: [
+          {
+            src: "/icons/icon-192x192.png",
+            sizes: "192x192",
+            type: "image/png",
+            purpose: "maskable any",
+          },
+          {
+            src: "/icons/icon-512x512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable any",
+          },
+        ],
+      },
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "google-fonts-cache",
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24 * 365,
+              },
+            },
+          },
+        ],
+      },
+    }),
+  ].filter(Boolean),
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
 }));
