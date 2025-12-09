@@ -20,6 +20,9 @@ export interface HabitCompletion {
   completed_at: string;
 }
 
+// Helper untuk mendapatkan tanggal hari ini dalam format YYYY-MM-DD
+const getToday = () => new Date().toISOString().split('T')[0];
+
 export const useHabits = () => {
   const { user, couple } = useAuth();
   const [habits, setHabits] = useState<Habit[]>([]);
@@ -30,9 +33,12 @@ export const useHabits = () => {
 
   const fetchHabits = useCallback(async () => {
     if (!couple?.id) {
-        setLoading(false);
-        return;
-    }
+        setLoading(false);
+        return;
+    }
+    
+    // ✅ PERBAIKAN: Selalu set loading true saat fetching dimulai
+    setLoading(true);
 
     const { data, error } = await supabase
       .from('habits')
@@ -44,22 +50,22 @@ export const useHabits = () => {
       console.error('Error fetching habits:', error);
       toast.error('Gagal memuat kebiasaan.');
     } else {
-        setHabits(data as Habit[]);
-    }
-
-    setLoading(false);
+        setHabits(data as Habit[]);
+    }
+    
+    // Catatan: setLoading(false) dipindahkan ke useEffect di bawah
   }, [couple?.id]);
 
   const fetchCompletions = useCallback(async () => {
     if (!couple?.id) return;
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getToday();
     
+    // Menggunakan JOIN yang lebih eksplisit untuk filter couple_id
     const { data, error } = await supabase
       .from('habit_completions')
-      // Filter berdasarkan couple_id (penting untuk keamanan) dan tanggal
-      .select(`*, habits!inner(couple_id)`) // Join untuk filter couple_id
-      .eq('habits.couple_id', couple.id)
+      .select(`*, habits!inner(couple_id)`) 
+      .eq('habits.couple_id', couple.id)
       .gte('completed_at', today);
 
     if (error) {
@@ -71,7 +77,7 @@ export const useHabits = () => {
     setCompletions(data as HabitCompletion[]);
   }, [couple?.id]);
 
-  // --- 2. Mutasi CRUD Kebiasaan: Gunakan State Lokal ---
+  // --- 2. Mutasi CRUD Kebiasaan: Mengandalkan Realtime ---
 
   const addHabit = async (habit: {
     title: string;
@@ -81,16 +87,14 @@ export const useHabits = () => {
   }) => {
     if (!couple?.id) return false;
 
-    // Minta Supabase mengembalikan data yang baru di-insert
-    const { data: newHabit, error } = await supabase.from('habits').insert({
+    // ✅ PERBAIKAN: Hapus .select('*').single() untuk menghindari duplikasi
+    const { error } = await supabase.from('habits').insert({
       couple_id: couple.id,
       title: habit.title,
       icon: habit.icon || '📌',
       color: habit.color || 'turquoise',
       target_per_day: habit.target_per_day || 1,
-    })
-      .select('*')
-      .single();
+    });
 
     if (error) {
       toast.error('Gagal menambah kebiasaan');
@@ -99,17 +103,15 @@ export const useHabits = () => {
     }
 
     toast.success('Kebiasaan berhasil ditambahkan');
-    // FIX: Update state lokal secara langsung
-    setHabits(prev => [...prev, newHabit as Habit]); 
-    // fetchHabits(); // TIDAK PERLU: Sudah ditangani oleh realtime atau update state lokal
+    // Biarkan Realtime Subscription yang menangani update state 'habits'
     return true;
   };
 
   const deleteHabit = async (id: string) => {
-    // Optimistic update (opsional): Hapus dari UI sebelum konfirmasi DB
-    const originalHabits = habits;
-    setHabits(prev => prev.filter(h => h.id !== id));
-    
+    // Optimistic update
+    const originalHabits = habits;
+    setHabits(prev => prev.filter(h => h.id !== id));
+    
     const { error } = await supabase
       .from('habits')
       .delete()
@@ -118,28 +120,34 @@ export const useHabits = () => {
     if (error) {
       toast.error('Gagal menghapus kebiasaan');
       console.error(error);
-      setHabits(originalHabits); // Rollback
+      setHabits(originalHabits); // Rollback
       return false;
     }
 
     toast.success('Kebiasaan berhasil dihapus');
-    // fetchHabits(); // TIDAK PERLU
+    // Biarkan Realtime Subscription yang menangani pembersihan 'completions' terkait
     return true;
   };
 
-  // --- 3. Mutasi Penyelesaian: Gunakan State Lokal ---
+  // --- 3. Mutasi Penyelesaian: Mengandalkan Realtime ---
 
   const toggleCompletion = async (habitId: string) => {
     if (!user?.id) return false;
 
-    const today = new Date().toISOString().split('T')[0];
     const existing = completions.find(
-      c => c.habit_id === habitId && c.user_id === user.id // Tidak perlu filter tanggal, karena fetchCompletions sudah memfilter data hari ini
+      c => c.habit_id === habitId && c.user_id === user.id
     );
-    
-    let success = false;
+    
+    let success = false;
+    // Simpan ID untuk optimistic update
+    let completionIdToRemove: string | null = null;
+    let newCompletionData: HabitCompletion | null = null;
 
     if (existing) {
+        // Optimistic Delete
+        completionIdToRemove = existing.id;
+        setCompletions(prev => prev.filter(c => c.id !== existing.id));
+
       // 3a. DELETE (Batalkan)
       const { error } = await supabase
         .from('habit_completions')
@@ -148,32 +156,36 @@ export const useHabits = () => {
 
       if (error) {
         toast.error('Gagal membatalkan kebiasaan');
+        // Rollback
+        setCompletions(prev => [...prev, existing]); 
       } else {
-        // FIX: Update state lokal
-        setCompletions(prev => prev.filter(c => c.id !== existing.id));
-        success = true;
-    }
+        success = true;
+      }
 
     } else {
+        // Optimistic Insert (buat data sementara untuk update state)
+        // Kita tidak bisa membuat ID di frontend, jadi kita biarkan Realtime update
+        // ATAU menggunakan Realtime update sebagai konfirmasi.
+
       // 3b. INSERT (Selesaikan)
-      const { data: newCompletion, error } = await supabase.from('habit_completions').insert({
+      const { data: result, error } = await supabase.from('habit_completions').insert({
         habit_id: habitId,
         user_id: user.id,
       })
-        .select('*')
-        .single();
+        .select('*') // Minta data baru dari server untuk konfirmasi/update UI
+        .single();
 
       if (error) {
         toast.error('Gagal menandai kebiasaan');
         console.error(error);
       } else {
-        // FIX: Update state lokal
-        setCompletions(prev => [...prev, newCompletion as HabitCompletion]);
-        success = true;
-    }
+        success = true;
+        // ✅ PERBAIKAN: Update state langsung dari data server (Pessimistic Update)
+        setCompletions(prev => [...prev, result as HabitCompletion]);
+      }
     }
 
-    // fetchCompletions(); // TIDAK PERLU
+    // Hapus fetchCompletions()
     return success;
   };
 
@@ -183,17 +195,16 @@ export const useHabits = () => {
     return completions.some(
       c => c.habit_id === habitId && 
            (userId ? c.user_id === userId : c.user_id === user?.id)
-      // Tidak perlu filter tanggal, karena completions hanya berisi data hari ini
     );
   }, [completions, user?.id]);
 
   // --- 5. Effect Awal (Initial Fetch) ---
 
   useEffect(() => {
-    // Panggil versi useCallback
-    fetchHabits(); 
-    fetchCompletions();
-  }, [fetchHabits, fetchCompletions]); // Dependency adalah fungsi itu sendiri
+    // Panggil keduanya
+    Promise.all([fetchHabits(), fetchCompletions()])
+        .finally(() => setLoading(false)); // ✅ PERBAIKAN: Panggil setLoading false setelah keduanya selesai
+  }, [fetchHabits, fetchCompletions]); 
 
 
   // --- 6. Realtime Subscription (Optimasi dengan Payload) ---
@@ -207,38 +218,52 @@ export const useHabits = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'habits', filter: `couple_id=eq.${couple.id}` },
         (payload) => {
-            const newHabit = payload.new as Habit;
-            const oldHabit = payload.old as Habit;
+            const newHabit = payload.new as Habit;
+            const oldHabit = payload.old as Habit;
 
-            if (payload.eventType === 'INSERT') {
-                setHabits(prev => [...prev, newHabit]);
-            } else if (payload.eventType === 'DELETE') {
-                setHabits(prev => prev.filter(h => h.id !== oldHabit.id));
-            } else if (payload.eventType === 'UPDATE') {
-                setHabits(prev => prev.map(h => h.id === newHabit.id ? newHabit : h));
-            }
-        }
+            if (payload.eventType === 'INSERT') {
+                // Mencegah duplikasi dari Realtime jika addHabit diubah ke Pessimistic update
+                setHabits(prev => {
+                    if (prev.some(h => h.id === newHabit.id)) return prev;
+                    return [...prev, newHabit];
+                });
+            } else if (payload.eventType === 'DELETE') {
+                setHabits(prev => prev.filter(h => h.id !== oldHabit.id));
+            } else if (payload.eventType === 'UPDATE') {
+                setHabits(prev => prev.map(h => h.id === newHabit.id ? newHabit : h));
+            }
+        }
       )
       .subscribe();
 
-    const completionsChannel = supabase
+    const completionsChannel = supabase
       .channel('completions-changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'habit_completions' },
-        // Karena data completions real-time tidak difilter berdasarkan tanggal, 
-       // lebih aman memanggil fetchCompletions() untuk memastikan kita hanya 
-       // mendapatkan data hari ini, atau memanggil fetchCompletions()
-       // jika payloadnya tidak memuat kolom completed_at (yang dibutuhkan).
-       () => fetchCompletions() 
+        (payload) => {
+            const newComp = payload.new as HabitCompletion;
+            const oldComp = payload.old as HabitCompletion;
+            const today = getToday();
+
+            // ✅ PERBAIKAN UTAMA: Manipulasi state langsung, tapi cek tanggal hari ini
+            if (payload.eventType === 'INSERT' && newComp.completed_at?.startsWith(today)) {
+                setCompletions(prev => {
+                    if (prev.some(c => c.id === newComp.id)) return prev;
+                    return [...prev, newComp];
+                });
+            } else if (payload.eventType === 'DELETE') {
+                setCompletions(prev => prev.filter(c => c.id !== oldComp.id));
+            }
+        }
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(habitsChannel);
-      supabase.removeChannel(completionsChannel);
+      supabase.removeChannel(completionsChannel);
     };
-  }, [couple?.id, fetchCompletions]); // Tambahkan fetchCompletions ke dependency array
+  }, [couple?.id]); // Hapus fetchCompletions dari dependency array
 
   // --- Return Values ---
   return {
@@ -249,6 +274,7 @@ export const useHabits = () => {
     deleteHabit,
     toggleCompletion,
     isCompletedToday,
-    refetch: fetchHabits,
+    refetchHabits: fetchHabits,
+    refetchCompletions: fetchCompletions,
   };
 };

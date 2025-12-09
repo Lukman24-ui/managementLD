@@ -24,10 +24,13 @@ export const useJournal = () => {
 
   const fetchEntries = useCallback(async () => {
     if (!couple?.id) {
-        setLoading(false);
-        setEntries([]);
-        return;
-    }
+        setLoading(false);
+        setEntries([]);
+        return;
+    }
+
+    // ✅ PERBAIKAN: Selalu set loading true saat fetching dimulai
+    setLoading(true);
 
     const { data, error } = await supabase
       .from('journal_entries')
@@ -39,13 +42,13 @@ export const useJournal = () => {
       console.error('Error fetching journal entries:', error);
       toast.error('Gagal memuat jurnal.');
     } else {
-        setEntries(data as JournalEntry[]);
-    }
+        setEntries(data as JournalEntry[]);
+    }
 
     setLoading(false);
-  }, [couple?.id]); // Fungsi hanya dibuat ulang jika couple.id berubah
+  }, [couple?.id]); 
 
-  // --- 2. Mutasi CRUD: Gunakan State Lokal ---
+  // --- 2. Mutasi CRUD: Sinkronisasi dengan Realtime ---
 
   const addEntry = async (entry: {
     content: string;
@@ -55,17 +58,16 @@ export const useJournal = () => {
   }) => {
     if (!user?.id || !couple?.id) return false;
 
-    // Minta Supabase mengembalikan data yang baru di-insert
-    const { data: newEntry, error } = await supabase.from('journal_entries').insert({
+    // ✅ PERBAIKAN: Hapus .select('*').single() dan setEntries di sini.
+    // Kita mengandalkan Real-time Subscription (di bawah) untuk memperbarui state.
+    const { error } = await supabase.from('journal_entries').insert({
       couple_id: couple.id,
       user_id: user.id,
       content: entry.content,
       mood_score: entry.mood_score || null,
       gratitude: entry.gratitude || null,
       tags: entry.tags || null,
-    })
-        .select('*')
-        .single(); // Penting: Mengembalikan data lengkap
+    });
 
     if (error) {
       toast.error('Gagal menambah jurnal');
@@ -74,48 +76,47 @@ export const useJournal = () => {
     }
 
     toast.success('Jurnal berhasil ditambahkan');
-    
-    // FIX: Update state lokal secara langsung (menambahkan di awal karena order DESC)
-    setEntries(prev => [newEntry as JournalEntry, ...prev]); 
-    
-    // fetchEntries(); // TIDAK PERLU
+    
+    // Biarkan Real-time Subscription yang menangani penambahan ke state.
     return true;
   };
 
   const updateEntry = async (id: string, updates: Partial<JournalEntry>) => {
-    // Optimistic Update: Perbarui UI sebelum konfirmasi DB
-    const originalEntries = entries;
-    setEntries(prev => 
-        prev.map(e => e.id === id ? { ...e, ...updates } : e)
-    );
-    
+    // Optimistic Update: Perbarui UI sebelum konfirmasi DB
+    const originalEntries = entries;
+    setEntries(prev => 
+        prev.map(e => e.id === id ? { ...e, ...updates } : e)
+    );
+    
+    // Minta data terbaru dari server untuk memastikan konsistensi
     const { data: updatedEntry, error } = await supabase
       .from('journal_entries')
       .update(updates)
       .eq('id', id)
-      .select('*')
-      .single(); // Ambil data terbaru untuk penanganan jika update sukses
+      .select('*')
+      .single(); 
 
     if (error) {
       toast.error('Gagal memperbarui jurnal');
       console.error(error);
-      setEntries(originalEntries); // Rollback jika gagal
+      setEntries(originalEntries); // Rollback jika gagal
       return false;
     }
 
     toast.success('Jurnal berhasil diperbarui');
-    // FIX: Pastikan state diperbarui dengan data terbaru dari DB (jika ada nilai default/generated yang berubah)
-    setEntries(prev => prev.map(e => e.id === id ? updatedEntry as JournalEntry : e));
-    
-    // fetchEntries(); // TIDAK PERLU
+    // ✅ PERBAIKAN: Update state secara Pessimistic di sini
+    // Real-time listener akan menerima update ini (yang sudah kita terapkan secara Optimistic)
+    // dan memastikan data final yang benar dari server.
+    setEntries(prev => prev.map(e => e.id === id ? updatedEntry as JournalEntry : e));
+    
     return true;
   };
 
   const deleteEntry = async (id: string) => {
-    // Optimistic Update: Hapus dari UI sebelum konfirmasi DB
-    const originalEntries = entries;
-    setEntries(prev => prev.filter(e => e.id !== id));
-    
+    // Optimistic Update: Hapus dari UI sebelum konfirmasi DB
+    const originalEntries = entries;
+    setEntries(prev => prev.filter(e => e.id !== id));
+    
     const { error } = await supabase
       .from('journal_entries')
       .delete()
@@ -124,21 +125,20 @@ export const useJournal = () => {
     if (error) {
       toast.error('Gagal menghapus jurnal');
       console.error(error);
-      setEntries(originalEntries); // Rollback jika gagal
+      setEntries(originalEntries); // Rollback jika gagal
       return false;
     }
 
     toast.success('Jurnal berhasil dihapus');
-    // fetchEntries(); // TIDAK PERLU
+    // Biarkan Real-time Subscription yang menangani penghapusan final.
     return true;
   };
 
   // --- 3. Initial Fetch ---
 
   useEffect(() => {
-    // Panggil versi useCallback
     fetchEntries();
-  }, [fetchEntries]); // Dependency adalah fungsi fetchEntries itu sendiri
+  }, [fetchEntries]); 
 
   // --- 4. Realtime Subscription: Menggunakan Payload ---
 
@@ -151,20 +151,24 @@ export const useJournal = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'journal_entries', filter: `couple_id=eq.${couple.id}` },
         (payload) => {
-            const newEntry = payload.new as JournalEntry;
-            const oldEntry = payload.old as JournalEntry;
+            const newEntry = payload.new as JournalEntry;
+            const oldEntry = payload.old as JournalEntry;
 
-            if (payload.eventType === 'INSERT') {
-                // Tambahkan di awal sesuai urutan entry_date: descending
-                setEntries(prev => [newEntry, ...prev]); 
-            } else if (payload.eventType === 'UPDATE') {
-                // Perbarui item yang sudah ada
-                setEntries(prev => prev.map(e => e.id === newEntry.id ? newEntry : e));
-            } else if (payload.eventType === 'DELETE') {
-                // Hapus item dari state berdasarkan ID
-                setEntries(prev => prev.filter(e => e.id !== oldEntry.id));
-            }
-        }
+            if (payload.eventType === 'INSERT') {
+                // ✅ PERBAIKAN: Cek duplikasi untuk menghindari masalah Realtime
+                setEntries(prev => {
+                    if (prev.some(e => e.id === newEntry.id)) return prev;
+                    // Tambahkan di awal sesuai urutan entry_date: descending
+                    return [newEntry, ...prev];
+                }); 
+            } else if (payload.eventType === 'UPDATE') {
+                // Perbarui item yang sudah ada
+                setEntries(prev => prev.map(e => e.id === newEntry.id ? newEntry : e));
+            } else if (payload.eventType === 'DELETE') {
+                // Hapus item dari state berdasarkan ID
+                setEntries(prev => prev.filter(e => e.id !== oldEntry.id));
+            }
+        }
       )
       .subscribe();
 
